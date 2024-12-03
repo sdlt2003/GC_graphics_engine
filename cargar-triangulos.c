@@ -111,7 +111,7 @@ int cargar_triangulos_color(char *filename, int *trig_total, triangulo **first_t
 		{
 			zkop = sscanf(line + 2, "%f%f%f%f%f%f%f%f%f%f%f%f%f%f%f", &v1, &v2, &v3, &v4, &v5, &v6, &v7, &v8, &v9,
 						  &v10, &v11, &v12, &v13, &v14, &v15);
-			printf("lerroko balio kopurua = %d\n", zkop);
+			// printf("lerroko balio kopurua = %d\n", zkop);
 			if (zkop == 15)
 			{
 				(*first_trig)[i].p1.x = v1;

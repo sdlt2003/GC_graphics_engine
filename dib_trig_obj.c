@@ -34,6 +34,13 @@ typedef struct triobj
     unsigned char *rgb;
 } triobj;
 
+
+typedef struct camera
+{
+    double camera_matrix[16];
+    mlist *mptr;
+} camera;
+
 // información de textura
 extern int load_ppm(char *file, unsigned char **bufferptr, int *dimxptr, int *dimyptr);
 unsigned char *buff;
@@ -57,10 +64,6 @@ int backface;
 double modelview_matrix[16];
 double projection_matrix[16];
 
-typedef struct camera
-{
-    double camera_matrix[16];
-} camera;
 
 camera *fcp; //first_cam_pointer
 double l, r, b, t, n, f;
@@ -239,6 +242,14 @@ double dot_product(vector v1, vector v2)
 
 // inicializacion de la camara
 void calc_cam_matrix(camera *fcp){
+
+    fcp->mptr = (mlist *)malloc(sizeof(mlist));
+    if (fcp->mptr == NULL)
+    {
+        printf("Error alocando mptr\n");
+        exit(1);
+    }
+
     fcp->camera_matrix[0] = 1.0; // x
     fcp->camera_matrix[4] = 0.0;
     fcp->camera_matrix[8] = 0.0;
@@ -618,15 +629,13 @@ static void draw(void)
     int i, j;
     double M_csr[16];
     triobj *auxptr;
-    /*
-    unsigned char* colorv;
-    unsigned char r,g,b;
-    */
 
-    // TODO
-    // 1. Definir M_csr
-    obtener_CSR_partiendo_de_M(fcp->camera_matrix, M_csr);
-    // 2. Definir M_p
+    if (cam_val == 0){
+        obtener_CSR_partiendo_de_M(fcp->camera_matrix, M_csr);
+    } else if (cam_val == 1){
+        obtener_CSR_partiendo_de_M(fcp->mptr->m, M_csr);
+    }
+        
     calc_projection_matrix();
 
     // no se puede dibujar sin objetos
@@ -725,7 +734,7 @@ void read_from_file(char *fitx)
         }
 
         triangulosptr = optr->triangulos;
-        printf("Matriz del objeto...\n");
+        // printf("Matriz del objeto...\n");
         optr->mptr = (mlist *)malloc(sizeof(mlist));
         for (i = 0; i < 16; i++)
             optr->mptr->m[i] = 0;
@@ -734,7 +743,7 @@ void read_from_file(char *fitx)
         optr->mptr->m[10] = 1.0;
         optr->mptr->m[15] = 1.0;
         optr->mptr->next = 0;
-        printf("objektu zerrendara doa informazioa...\n");
+        // printf("objektu zerrendara doa informazioa...\n");
         optr->next = first_object_pointer;
         first_object_pointer = optr;
         sel_ptr = optr;
@@ -748,21 +757,20 @@ void scale(int sign)
 
     // printf("sign: %d\n", sign);
     double factor = sign * 0.05;
+    mlist *target = (cam_val == 1) ? fcp->mptr : sel_ptr->mptr;
     
-    sel_ptr->mptr->m[0] += factor;
-    sel_ptr->mptr->m[5] += factor;
-    sel_ptr->mptr->m[10] += factor;
+    target->m[0] += factor;
+    target->m[5] += factor;
+    target->m[10] += factor;
 }
 
-void translate (double x, double y, double z)
-{
-    // do_matrix();
-
+void translate(double x, double y, double z) {
     double factor = 0.05;
-
-    sel_ptr->mptr->m[3] += x * factor;
-    sel_ptr->mptr->m[7] += y * factor;
-    sel_ptr->mptr->m[11] += z * factor;
+    mlist *target = (cam_val == 1) ? fcp->mptr : sel_ptr->mptr;
+    
+    target->m[3] += x * factor;
+    target->m[7] += y * factor;
+    target->m[11] += z * factor;
 }
 
 void delete_object(triobj *optr)
@@ -822,6 +830,8 @@ void rotate(double x, double y, double z)
     double c = cos(angle);
     double s = sin(angle);
 
+    mlist *target = (cam_val == 1) ? fcp->mptr : sel_ptr->mptr;
+
     // Matriz identidad
     trfm_matrix[0] = trfm_matrix[5] = trfm_matrix[10] = trfm_matrix[15] = 1.0;
 
@@ -852,21 +862,14 @@ void rotate(double x, double y, double z)
 
     double result[16] = {0};
 
-    // Modificación local
-    if (local_trfm == 1)
-    {
-        mxm(sel_ptr->mptr->m, trfm_matrix, result);
+    if (local_trfm == 1) {
+        mxm(target->m, trfm_matrix, result);
+    } else {
+        mxm(trfm_matrix, target->m, result);
     }
-    // Modificación global
-    else
-    {
-        mxm(trfm_matrix, sel_ptr->mptr->m, result);
-    }
-
-    // Actualizar la matriz del objeto
-    for (int i = 0; i < 16; i++)
-    {
-        sel_ptr->mptr->m[i] = result[i];
+    
+    for (int i = 0; i < 16; i++) {
+        target->m[i] = result[i];
     }
 }
 
@@ -936,10 +939,8 @@ static void keyboard(unsigned char key, int x, int y)
             all = 1;
         break;
     case 'b':
-        if (backface == 1)
-            backface = 0;
-        else
-            backface = 1;
+    case 'B':
+        backface = backface - 1;
         break;
     case 'o':
         if (objects == 1)
@@ -954,12 +955,6 @@ static void keyboard(unsigned char key, int x, int y)
         scale(-1);
         break;
     // TODO: Si le damos a la 
-    case 'c':
-        if (cam_val == 1)
-            cam_val = 0;
-        else
-            cam_val = 1;
-        break;
     case 'l':
         if (lines == 1)
             lines = 0;
@@ -978,19 +973,17 @@ static void keyboard(unsigned char key, int x, int y)
         else
             local_trfm = 1;
         break;
-    case 'p':
-        // cambio de proyeccion 
-        if (perspective == 1)
-            perspective = 0;
-        else if (perspective == 0)
-            perspective = 1;
+    // Distingir C de c. C se encarga de cambiar la visualizacion entre la camara y el objeto
+    case 'C':
+        //TODO: cambiar la visualizacion entre la camara y el objeto
+    case 'c':
+        cam_val = 1 - cam_val;
+        printf("Transformaciones aplicadas a: %s\n", cam_val ? "Cámara" : "Objeto");
         break;
+    case 'p':
     case 'P':
-        // cambio de proyeccion 
-        if (perspective == 1)
-            perspective = 0;
-        else if (perspective == 0)
-            perspective = 1;
+        perspective = 1 - perspective;
+        printf("Visualización de vista en %s\n", perspective ? "Perspectiva" : "Paralelo");
         break;
     case 'x':
         x_trfm(1);
@@ -1015,7 +1008,7 @@ static void keyboard(unsigned char key, int x, int y)
         break;
     case 'f':
         /*Ask for file*/
-        printf("idatzi fitxategi izena\n");
+        printf("Escribe el nombre del fichero: \n");
         scanf("%s", &(filename[0]));
         read_from_file(filename);
         indexx = 0;
@@ -1098,10 +1091,13 @@ int main(int argc, char **argv)
     all = 1;                 // dibujame todos los triangulos a la vez
     lines = 1;               // dibujame los polignos mediante lineas (0 es que no)
     objects = 1;             // todos los objetos a la vez
-    cam_val = 0;             //
     first_object_pointer = 0;
     backface = 1;
+    printf("Empezamos con la eliminación de las caras traseras %s\n", backface ? "activadas" : "desactivadas");
     perspective = 1;
+    printf("Empezamos con la visualización de vista en %s\n", perspective ? "Perspectiva" : "Paralelo");
+    cam_val = 1;             // las transformaciones se aplican a la camara
+    printf("Empezamos con las transformaciones aplicadas a %s\n", cam_val ? "Cámara" : "Objeto");
     sel_ptr = 0;
     trfm = 'r';
     local_trfm = 1;
