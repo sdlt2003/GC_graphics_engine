@@ -1,0 +1,14 @@
+
+Hemos calulado Nut y yo la distancia de los puntos por coordenadas baricéntricas
+Tenemos varias funciones auxiliares para sacar peso de cálculo de la función original.
+En caso de que sea un triángulo no obtusángulo, calculamos alturas, ordenamos puntos y 
+calculamos al distancia de cada pixel. Escalamos los incremento alfa con la primera 
+altura mas grande y beta con la segunda altura mas grande.
+
+Si el triangulo es de este caso especial, en vez de coger la
+altura más grande, cogemos los 2 ládos más grandes como heurístico (podríamos coger
+solo el más largo, pero consigo menos puntos de esta forma) y se los asignamos a 
+h1 y h2, que después servirán para escalar los incrementos.
+
+En el doble bucle iteramos alfa y beta. Sacamos gamma con estos
+2 valores, y haciendo los cálculos, sacamos los puntos

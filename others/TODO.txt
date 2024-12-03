@@ -1,0 +1,38 @@
+
+-> Vuelo:
+-> Analisis:
+
+
+TODOs:
+
+tecla c -->     Mediante la tecla "c" cambiaremos el sujeto de las transformaciones: si estamos transformando el 
+                objeto seleccionado, al pulsar la tecla 'c' pasaremos a transformar la cámara, y mientras no volvamos a pulsar
+                la tecla 'c' aplicaremos las transformaciones a la cámara. Si estando transformando la cámara pulsamos la tecla 'c',
+                a partir de ese momento pasaremos a transformar el objeto seleccionado.
+
+tecla C -->     Esta tecla hace que en vez de visualizar lo que ve la cámara se visualice lo que ve el objeto seleccionado. Si estamos
+                visualizando lo que ve el objeto seleccionado al pulsar la tecla "C" hay que volver a visualizar lo que ve la cámara.
+                Esto significa que hay que distinguir entre cámara y objetos (aunque una cámara podría considerarse objeto)
+                convierte el objeto en tu camara, pasas a ver lo que ve el objeto.
+
+                Si visualizamos lo que ve el objeto no tiene sentido transformar la cámara, por lo que habrá que pasar a modo objeto (las
+                transformaciones afectan al objeto), y al transformar el objeto se visualizará el escenario desde la nueva posición y
+                orientación del objeto, es decir, habrá que recalcular o actualizar las matrices de cambio de sistema de referencia de la
+                cámara asociada al objeto. Además, si estamos visualizando lo que ve el objeto no podremos usar la tecla c, ya que estamos
+                visualizando lo que ve el objeto y no veríamos los cambios aplicados a la cámara.
+
+tecla G,g -->   Cambiamos de modo vuelo a modo análisis o viceversa (en modo análisis la cámara debe mirar al objeto seleccionado)
+            
+                En modo análisis, cuando tengamos la traslación activa 'z' y 'Z' deben hacer avanzar/retroceder a la cámara
+                (en la dirección en la que mira, es decir debe "acercarse a" o "alejarse de" el objeto seleccionado) mientras
+                que 'x', 'X', 'y', 'Y' deben hacer girar la posición de la cámara alrededor del objeto seleccionado. Dicha
+                rotación debe realizarse según el sistema de referencia de la propia cámara, es decir los ejes de rotación deben
+                ser los ejes del sistema de referencia de la cámara y no las del mundo...
+
+                Si tenemos la rotación activada 'z y 'Z' deben realizar una rotación en el eje Z de la cámara (Roll).
+                Cámara en modo vuelo. Transformaciones en el sistema local de la cámara. En modo vuelo, cuando tengamos
+                la traslación activada, 'z' y 'Z' deben hacer avanzar/retroceder a la cámara (en la dirección en la que mira)
+                mientras que 'x'. 'X', 'y', 'Y' deben hacer girar la dirección en la que mira la cámara; hacer mirar hacia la
+                izquierda/derecha (Yaw) o  arriba/abajo (Pitch). Por tanto, el siguiente avance/retroceso deberá realizarse
+                en la nueva dirección. Si tenemos la rotación activa 'z' y 'Z' deben realizar una rotación en el eje Z de la cámara (Roll).
+
