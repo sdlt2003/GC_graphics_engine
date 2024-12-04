@@ -34,12 +34,7 @@ typedef struct triobj
     unsigned char *rgb;
 } triobj;
 
-
-typedef struct camera
-{
-    double camera_matrix[16];
-    mlist *mptr;
-} camera;
+triobj *first_cam_ptr; //first_cam_pointer
 
 // información de textura
 extern int load_ppm(char *file, unsigned char **bufferptr, int *dimxptr, int *dimyptr);
@@ -65,7 +60,6 @@ double modelview_matrix[16];
 double projection_matrix[16];
 
 
-camera *fcp; //first_cam_pointer
 double l, r, b, t, n, f;
  
 // hay que cambiar esos valores dependiendo si estamos en perspectiva o paralelo
@@ -97,8 +91,7 @@ void dibujar_linea_z(float linea, float c1x, float c1z, float c1u, float c1v, fl
     unsigned char r, g, b;
     unsigned char *colorv;
 
-    // TODO x balioak -1 eta 1 artekoak direla ziurtatu eta ondorioz z, u eta v egokitu
-
+    // TODO x balioak -1 eta 1 artekoak direla ziurtatu eta ondorioz z, u i = ord(str1[index]) if eta v egokitu
     // x balioak -1 eta 1 artekoa izan behar du, ezkerretik eskuinera 2 unitateko trfm dauka x balioak, eta
     // dim adina pixel behar dira ezkerretik eskuinera joateko, beraz, 2-ko trfmri "dim" pixel dagozkio.
     // ondorioz c1x-tik c2x-ra doan tartean behar ditudan pixelak = (c2x-c1x)dim/2 pixel behar ditut
@@ -241,35 +234,55 @@ double dot_product(vector v1, vector v2)
 }
 
 // inicializacion de la camara
-void calc_cam_matrix(camera *fcp){
+void calc_cam_matrix(triobj *first_cam_ptr){
 
-    fcp->mptr = (mlist *)malloc(sizeof(mlist));
-    if (fcp->mptr == NULL)
-    {
-        printf("Error alocando mptr\n");
+    if (first_cam_ptr->mptr == NULL) {
+        first_cam_ptr->mptr = (mlist *)malloc(sizeof(mlist));
+        if (first_cam_ptr->mptr == NULL) {
+            fprintf(stderr, "Error: No se pudo asignar memoria para la matriz de la cámara\n");
+            exit(1);
+        }
+    }
+    
+    // Inicializa la matriz de la cámara
+    double *m = first_cam_ptr->mptr->m;
+
+    first_cam_ptr->mptr->m[0] = 1.0;
+    first_cam_ptr->mptr->m[4] = 0.0;
+    first_cam_ptr->mptr->m[8] = 0.0;
+    first_cam_ptr->mptr->m[12] = 0.0;
+
+    first_cam_ptr->mptr->m[1] = 0.0;
+    first_cam_ptr->mptr->m[5] = 1.0;
+    first_cam_ptr->mptr->m[9] = 0.0;
+    first_cam_ptr->mptr->m[13] = 0.0;
+    
+    first_cam_ptr->mptr->m[2] = 0.0;
+    first_cam_ptr->mptr->m[6] = 0.0;
+    first_cam_ptr->mptr->m[10] = 1.0;
+    first_cam_ptr->mptr->m[14] = 0.0;
+
+    first_cam_ptr->mptr->m[3] = 0.0;
+    first_cam_ptr->mptr->m[7] = 0.0;
+    first_cam_ptr->mptr->m[11] = 2.0;
+    first_cam_ptr->mptr->m[15] = 1.0;
+}
+
+void init_camera() {
+    first_cam_ptr = (triobj *)malloc(sizeof(triobj));
+    if (first_cam_ptr == NULL) {
+        fprintf(stderr, "Error: No se pudo asignar memoria para la cámara\n");
         exit(1);
     }
-
-    fcp->camera_matrix[0] = 1.0; // x
-    fcp->camera_matrix[4] = 0.0;
-    fcp->camera_matrix[8] = 0.0;
-    fcp->camera_matrix[12] = 0.0;
-
-    fcp->camera_matrix[1] = 0.0;
-    fcp->camera_matrix[5] = 1.0;
-    fcp->camera_matrix[9] = 0.0;
-    fcp->camera_matrix[13] = 0.0;
+    first_cam_ptr->num_triangles = 0;
+    first_cam_ptr->triangulos = NULL;
+    first_cam_ptr->next = NULL;
+    first_cam_ptr->rgb = NULL;
     
-    fcp->camera_matrix[2] = 0.0;
-    fcp->camera_matrix[6] = 0.0;
-    fcp->camera_matrix[10] = 1.0;
-    fcp->camera_matrix[14] = 0.0;
-
-    fcp->camera_matrix[3] = 0.0;
-    fcp->camera_matrix[7] = 0.0;
-    fcp->camera_matrix[11] = 2.0;
-    fcp->camera_matrix[15] = 1.0;
+    calc_cam_matrix(first_cam_ptr);
 }
+
+
 
 void calc_projection_matrix()
 {
@@ -497,7 +510,7 @@ void dibujar_triangulo(triobj *optr, int ti)
     }
     else
     {
-        dir_cam = (vector){fcp->camera_matrix[3], fcp->camera_matrix[7], fcp->camera_matrix[11]};
+        dir_cam = (vector){first_cam_ptr->mptr->m[3], first_cam_ptr->mptr->m[7], first_cam_ptr->mptr->m[11]};
         c = dot_product(dir_cam, nAux);
 
         if (c < -1e-6)
@@ -630,12 +643,12 @@ static void draw(void)
     double M_csr[16];
     triobj *auxptr;
 
-    if (cam_val == 0){
-        obtener_CSR_partiendo_de_M(fcp->camera_matrix, M_csr);
-    } else if (cam_val == 1){
-        obtener_CSR_partiendo_de_M(fcp->mptr->m, M_csr);
+    if (first_cam_ptr == NULL || first_cam_ptr->mptr == NULL) {
+        fprintf(stderr, "Error: La cámara no está inicializada correctamente a la hora de dibujar.\n");
+        return;
     }
-        
+
+    obtener_CSR_partiendo_de_M(first_cam_ptr->mptr->m, M_csr);
     calc_projection_matrix();
 
     // no se puede dibujar sin objetos
@@ -757,7 +770,7 @@ void scale(int sign)
 
     // printf("sign: %d\n", sign);
     double factor = sign * 0.05;
-    mlist *target = (cam_val == 1) ? fcp->mptr : sel_ptr->mptr;
+    mlist *target = (cam_val == 1) ? first_cam_ptr->mptr : sel_ptr->mptr;
     
     target->m[0] += factor;
     target->m[5] += factor;
@@ -766,7 +779,7 @@ void scale(int sign)
 
 void translate(double x, double y, double z) {
     double factor = 0.05;
-    mlist *target = (cam_val == 1) ? fcp->mptr : sel_ptr->mptr;
+    mlist *target = (cam_val == 1) ? first_cam_ptr->mptr : sel_ptr->mptr;
     
     target->m[3] += x * factor;
     target->m[7] += y * factor;
@@ -830,7 +843,7 @@ void rotate(double x, double y, double z)
     double c = cos(angle);
     double s = sin(angle);
 
-    mlist *target = (cam_val == 1) ? fcp->mptr : sel_ptr->mptr;
+    mlist *target = (cam_val == 1) ? first_cam_ptr->mptr : sel_ptr->mptr;
 
     // Matriz identidad
     trfm_matrix[0] = trfm_matrix[5] = trfm_matrix[10] = trfm_matrix[15] = 1.0;
@@ -1059,11 +1072,8 @@ int main(int argc, char **argv)
 {
     int retval;
 
-    // asignamos memoria a cam_pointer
-    fcp = (camera *)malloc(sizeof(camera));
-
     // inicializamos la matriz de la cámara
-    calc_cam_matrix(fcp);
+    init_camera();
 
     printf(" Triangeluak: barneko puntuak eta testura\n Triángulos con puntos internos y textura \n");
     printf("Press <ESC> to finish\n");
