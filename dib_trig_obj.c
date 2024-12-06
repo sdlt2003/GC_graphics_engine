@@ -53,6 +53,7 @@ int cam_val;
 char trfm;
 int local_trfm;
 int backface;
+int camera_mode;
 
 
 //matrices globales
@@ -317,7 +318,7 @@ void calc_projection_matrix()
     {
         // (p)aralelo
 
-        l = -1.0, r = 1.0, b = -1.0, t = 1.0, n = -0.1, f = 10.0;
+        l = -1.0, r = 1.0, b = -1.0, t = 1.0, n = 0.1, f = -100.0;
 
         projection_matrix[0] = 2 / (r - l);
         projection_matrix[1] = 0;
@@ -339,6 +340,14 @@ void calc_projection_matrix()
         projection_matrix[14] = 0;
         projection_matrix[15] = 1;
     }
+    printf("La matriz de proyección es la siguiente: \n");
+    for (int i = 0; i < 4; i++) {
+        for (int j = 0; j < 4; j++) {
+            printf("%lf ", projection_matrix[i * 4 + j]);
+        }
+        printf("\n");
+    }
+
 }
 
 // TODO (transform): obtener la matriz que pasa del sistema de referencia del objeto al sistema de referencia del mundo
@@ -488,10 +497,17 @@ void dibujar_triangulo(triobj *optr, int ti)
     mxp(&p1aux, modelview_matrix, tptr->p1);
     mxp(&p2aux, modelview_matrix, tptr->p2);
     mxp(&p3aux, modelview_matrix, tptr->p3);
+
+// Verificar si alguno de los puntos tiene z <= -0.1
+    if (p1aux.z >= -n || p2aux.z >= -n || p3aux.z >= -n) {
+        return; // No dibujamos el triángulo
+    }
+
+
     mxv(&nAux, modelview_matrix, tptr->N);
 
-    // aqui se hace la toma de decisiones de camara trasera etc... si sigues adelante, sigues si no no
-    // aqui
+    // tengo que decidir si dibujar o no el triangulo dependiendo de si el punto está por detrás de mi plano de proyección
+
 
     // si la camara esta en perspectiva, la normal del triangulo no se puede usar para determinar si esta delante o detras
     if (!perspective)
@@ -524,8 +540,7 @@ void dibujar_triangulo(triobj *optr, int ti)
             glColor3ub(255, 255, 255);
         }
 
-        // En perspectiva, el plano Z da problemas en función de la posición
-        // de la cámara respecto al objeto
+        // En perspectiva, el plano Z da problemas en función de la posición de la cámara respecto al objeto
     }
 
     // como la 4ta componenete de la matriz de proyeccion en perspectiva puede ser 0, ya no podemos usar mxp
@@ -534,8 +549,8 @@ void dibujar_triangulo(triobj *optr, int ti)
     mPxP(&p1, projection_matrix, p1aux);
     mPxP(&p2, projection_matrix, p2aux);
     mPxP(&p3, projection_matrix, p3aux);
-    // mxv(&n, projection_matrix, nAux);
 
+    
     if (lines == 1)
     {
         glBegin(GL_POLYGON);
@@ -998,6 +1013,7 @@ static void keyboard(unsigned char key, int x, int y)
         perspective = 1 - perspective;
         printf("Visualización de vista en %s\n", perspective ? "Perspectiva" : "Paralelo");
         break;
+    
     case 'x':
         x_trfm(1);
         break;
@@ -1115,9 +1131,35 @@ int main(int argc, char **argv)
         read_from_file(argv[1]);
     else
         read_from_file("abioia-1+1.txt");
-        translate(-10, 0, 0);
-        read_from_file("z-1+1.txt");
-        translate(10, 0, 0);
+        if (sel_ptr != 0) 
+            {
+            sel_ptr->mptr->m[3] = -1.0;
+            }   
+        read_from_file("abioia-1+1.txt");
+        if (sel_ptr != 0) 
+            {
+                sel_ptr->mptr->m[3] = 1.0;
+            }   
+        read_from_file("abioia-1+1.txt");
+        if (sel_ptr != 0) 
+            { 
+            sel_ptr->mptr->m[7] = -0.4;
+            sel_ptr->mptr->m[11] = 0.5;
+            }   
+        read_from_file("abioia-1+1.txt");
+        if (sel_ptr != 0) 
+            {
+            sel_ptr->mptr->m[11] = -0.7;
+            }        
+        read_from_file("abioia-1+1.txt");
+        if (sel_ptr != 0) 
+            {
+            sel_ptr->mptr->m[7] = 0.7;
+            }                        
+        read_from_file("abioia-1+1.txt");
+        // translate(-10, 0, 0);
+        // read_from_file("z-1+1.txt");
+        // translate(10, 0, 0);
     glutMainLoop();
 
     return 0;
