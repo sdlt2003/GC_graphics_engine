@@ -48,7 +48,7 @@ int all;
 int lines;
 int objects;
 int perspective;
-int cam_val;
+int cam_val; // si estamos aplicando transformaciones a la camara o  al objeto
 char trfm;
 int local_trfm;
 int view_mode; // 0 es la camara, 1 es el objeto
@@ -60,8 +60,8 @@ double modelview_matrix[16];
 double projection_matrix[16];
 
 double l, r, b, t, n, f;
-punto E, At;
-
+punto E, at;
+vector look_dir, up, right;
 char filename[100];
 
 // TODO
@@ -231,7 +231,7 @@ double dot_product(vector v1, vector v2)
     return v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
 }
 
-// el vector c se obtiene de la multiplicación de los vectores a x b
+// el vector c se obtiene de la multiplicación de los vectores a ^ b
 void cross_product (vector v1, vector v2, vector *result)
 {
     result->x = v1.y * v2.z - v1.z * v2.y;
@@ -274,33 +274,6 @@ void calc_cam_matrix(triobj *first_cam_ptr){
     first_cam_ptr->mptr->m[15] = 1.0;
 }
 
-void update_cam_params() {
-
-    E.x = first_cam_ptr->mptr->m[3];
-    E.y = first_cam_ptr->mptr->m[7];
-    E.z = first_cam_ptr->mptr->m[11];
-
-    At.x = E.x - first_cam_ptr->mptr->m[2];
-    At.y = E.y - first_cam_ptr->mptr->m[6];
-    At.z = E.z - first_cam_ptr->mptr->m[10];
-}
-
-void init_camera() {
-    first_cam_ptr = (triobj *)malloc(sizeof(triobj));
-    if (first_cam_ptr == NULL) {
-        fprintf(stderr, "Error: No se pudo asignar memoria para la cámara\n");
-        exit(1);
-    }
-    first_cam_ptr->num_triangles = 0;
-    first_cam_ptr->triangulos = NULL;
-    first_cam_ptr->next = NULL;
-    first_cam_ptr->rgb = NULL;
-    
-    calc_cam_matrix(first_cam_ptr);
-
-    // Inicializar E y at
-    update_cam_params();
-}
 
 void calc_projection_matrix()
 {
@@ -451,14 +424,11 @@ void intercambiar_puntos(punto *p1, punto *p2)
     *p2 = temp;
 }
 
-//funcion de normalizacion
-vector normalize(vector v)
-{
-    float norma = sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
-    v.x /= norma;
-    v.y /= norma;
-    v.z /= norma;
-    return v;
+void normalize(vector *v) {
+    float norma = sqrt(v->x * v->x + v->y * v->y + v->z * v->z);
+    v->x /= norma;
+    v->y /= norma;
+    v->z /= norma;
 }
 
 int tipo_triangulo(punto p1, punto p2, punto p3, float *lado1, float *lado2, float *lado3)
@@ -809,6 +779,88 @@ void read_from_file(char *fitx)
     printf("datuak irakurrita\n");
 }
 
+void calc_obj_centre(){
+    for (int i = 0; i < sel_ptr->num_triangles; i++) {
+        at.x += (sel_ptr->triangulos[i].p1.x + sel_ptr->triangulos[i].p2.x + sel_ptr->triangulos[i].p3.x) / 3.0;
+        at.y += (sel_ptr->triangulos[i].p1.y + sel_ptr->triangulos[i].p2.y + sel_ptr->triangulos[i].p3.y) / 3.0;
+        at.z += (sel_ptr->triangulos[i].p1.z + sel_ptr->triangulos[i].p2.z + sel_ptr->triangulos[i].p3.z) / 3.0;
+    }
+    at.x /= sel_ptr->num_triangles;
+    at.y /= sel_ptr->num_triangles;
+    at.z /= sel_ptr->num_triangles;
+}
+
+void update_cam_params() {
+    E.x = first_cam_ptr->mptr->m[3];
+    E.y = first_cam_ptr->mptr->m[7];
+    E.z = first_cam_ptr->mptr->m[11];
+
+    // At es el punto al que deberia mirar, que es la posicion del objeto seleccionado
+    if (sel_ptr) {
+        at.x = sel_ptr->mptr->m[3];
+        at.y = sel_ptr->mptr->m[7]; 
+        at.z = sel_ptr->mptr->m[11];
+    } else {
+        at.x = 0.0;
+        at.y = 0.0;
+        at.z = 0.0;
+    }
+
+    look_dir.x = at.x - E.x;
+    look_dir.y = at.y - E.y;
+    look_dir.z = at.z - E.z;
+    normalize(&look_dir);
+
+    // up.x = first_cam_ptr->mptr->m[1];
+    // up.y = first_cam_ptr->mptr->m[5];
+    // up.z = first_cam_ptr->mptr->m[9];
+    // normalize(&up);
+
+    up.x = 0.0;
+    up.y = 1.0;
+    up.z = 0.0; 
+
+    cross_product(up, look_dir, &right);
+    normalize(&right);
+}
+
+void orientate_cam_to_obj() {
+    // Actualizar la matriz de la cámara para que mire al objeto seleccionado
+    first_cam_ptr->mptr->m[0] = right.x;
+    first_cam_ptr->mptr->m[1] = right.y; 
+    first_cam_ptr->mptr->m[2] = right.z;
+    first_cam_ptr->mptr->m[4] = up.x;
+    first_cam_ptr->mptr->m[5] = up.y;
+    first_cam_ptr->mptr->m[6] = up.z;
+    first_cam_ptr->mptr->m[8] = -look_dir.x;
+    first_cam_ptr->mptr->m[9] = -look_dir.y;
+    first_cam_ptr->mptr->m[10] = -look_dir.z;
+}
+
+void init_camera() {
+    first_cam_ptr = (triobj *)malloc(sizeof(triobj));
+    if (first_cam_ptr == NULL) {
+        fprintf(stderr, "Error: No se pudo asignar memoria para la cámara\n");
+        exit(1);
+    }
+    first_cam_ptr->num_triangles = 0;
+    first_cam_ptr->triangulos = NULL;
+    first_cam_ptr->next = NULL;
+    first_cam_ptr->rgb = NULL;
+    
+    calc_cam_matrix(first_cam_ptr);
+
+    // Inicializar E y at
+    update_cam_params();
+}
+
+void analysis_manager() {
+    calc_obj_centre();      // calcula el centro del objeto seleccionado
+    update_cam_params();    // calcula todos los parametros de la camara para el modo analisis
+    orientate_cam_to_obj(); // actualiza la matriz de la camara
+
+}
+
 void scale(int sign)
 {
     // do_matrix();
@@ -1026,7 +1078,7 @@ void undo()
 
 // void rotate_around_object(char axis, int sign) {
 //     double angle = sign * 0.05;
-//     vector E, At, up, Xc, Yc, Zc;
+//     vector E, at, up, Xc, Yc, Zc;
 //     double radius;
 //     double c, s;
 //     double rotation_matrix[16] = {0};
@@ -1037,12 +1089,12 @@ void undo()
 //     E.z = first_cam_ptr->mptr->m[11];
 
 //     // Calcular el punto de atención (At) usando la dirección de vista
-//     At.x = E.x - first_cam_ptr->mptr->m[2];
-//     At.y = E.y - first_cam_ptr->mptr->m[6];
-//     At.z = E.z - first_cam_ptr->mptr->m[10];
+//     at.x = E.x - first_cam_ptr->mptr->m[2];
+//     at.y = E.y - first_cam_ptr->mptr->m[6];
+//     at.z = E.z - first_cam_ptr->mptr->m[10];
 
-//     // Calcular el radio (distancia entre E y At)
-//     radius = sqrt(pow(E.x - At.x, 2) + pow(E.y - At.y, 2) + pow(E.z - At.z, 2));
+//     // Calcular el radio (distancia entre E y at)
+//     radius = sqrt(pow(E.x - at.x, 2) + pow(E.y - at.y, 2) + pow(E.z - at.z, 2));
 
 //     // Calcular seno y coseno del ángulo
 //     c = cos(angle);
@@ -1076,9 +1128,9 @@ void undo()
 
 //     // Calcular la nueva posición de E
 //     vector new_E;
-//     new_E.x = At.x + (E.x - At.x) * rotation_matrix[0] + (E.y - At.y) * rotation_matrix[1] + (E.z - At.z) * rotation_matrix[2];
-//     new_E.y = At.y + (E.x - At.x) * rotation_matrix[4] + (E.y - At.y) * rotation_matrix[5] + (E.z - At.z) * rotation_matrix[6];
-//     new_E.z = At.z + (E.x - At.x) * rotation_matrix[8] + (E.y - At.y) * rotation_matrix[9] + (E.z - At.z) * rotation_matrix[10];
+//     new_E.x = at.x + (E.x - at.x) * rotation_matrix[0] + (E.y - at.y) * rotation_matrix[1] + (E.z - at.z) * rotation_matrix[2];
+//     new_E.y = at.y + (E.x - at.x) * rotation_matrix[4] + (E.y - at.y) * rotation_matrix[5] + (E.z - at.z) * rotation_matrix[6];
+//     new_E.z = at.z + (E.x - at.x) * rotation_matrix[8] + (E.y - at.y) * rotation_matrix[9] + (E.z - at.z) * rotation_matrix[10];
 
 //     // Actualizar la matriz de la cámara con la nueva posición
 //     first_cam_ptr->mptr->m[3] = new_E.x;
@@ -1089,8 +1141,8 @@ void undo()
 //     up.x = 0; up.y = 1; up.z = 0;
 
 //     // Calcular Zc (dirección de vista)
-//     Zc.x = At.x - new_E.x;
-//     Zc.y = At.y - new_E.y;
+//     Zc.x = at.x - new_E.x;
+//     Zc.y = at.y - new_E.y;
 //     Zc.z = At.z - new_E.z;
 //     Zc = normalize(Zc);
 
@@ -1180,7 +1232,7 @@ static void keyboard(unsigned char key, int x, int y)
             analisis = 1 - analisis; // cambiamos entre modo analisis y modo vuelo
             printf("La camara se encuentra en modo %s\n", analisis ? "Analisis" : "Vuelo");
             if (analisis){
-                enter_analysis_mode();
+                analysis_manager();
             }
         } else {            // si estamos aplicando transformaciones a un objeto
             local_trfm = 1 - local_trfm; // cambiamos entre transformaciones locales y globales 
@@ -1197,7 +1249,9 @@ static void keyboard(unsigned char key, int x, int y)
         cam_val = 1 - cam_val;
         printf("=== \n");
         printf("Transformaciones aplicadas a: %s\n", cam_val ? "Cámara" : "Objeto");
-        printf("- La camara se encuentra en modo %s\n", analisis ? "Analisis" : "Vuelo");
+        if (cam_val == 1) {
+            printf("- La camara se encuentra en modo %s\n", analisis ? "Analisis" : "Vuelo");
+        }
         printf("- %s activada\n", trfm == 't' ? "Traslación" : "Rotación");
         break;
     case 'p':
@@ -1215,7 +1269,7 @@ static void keyboard(unsigned char key, int x, int y)
                 y_trfm(1);
             } else {
                 selected = 'x';
-                rotate_around_object(selected, 1);
+                // rotate_around_object(selected, 1);
             }
             update_cam_params();
         }
@@ -1228,7 +1282,7 @@ static void keyboard(unsigned char key, int x, int y)
                 x_trfm(1);
             } else {
                 selected = 'y';
-                rotate_around_object(selected, 1);
+                // rotate_around_object(selected, 1);
             }
             update_cam_params();
         }
@@ -1244,7 +1298,7 @@ static void keyboard(unsigned char key, int x, int y)
                 y_trfm(-1);
             } else {
                 selected = 'x';
-                rotate_around_object(selected, -1);
+                // rotate_around_object(selected, -1);
             }
             update_cam_params();
         }
@@ -1257,7 +1311,7 @@ static void keyboard(unsigned char key, int x, int y)
                 x_trfm(-1);
             } else {
                 selected = 'y';
-                rotate_around_object(selected, -1);
+                // rotate_around_object(selected, -1);
             }
             update_cam_params();
         }
@@ -1294,6 +1348,10 @@ static void keyboard(unsigned char key, int x, int y)
             /*The selection is circular, thus if we move out of the list we go back to the first element*/
             if (sel_ptr == 0)
                 sel_ptr = first_object_pointer;
+
+            if (analisis == 1) {
+                analysis_manager();
+            }
             indexx = 0; // the selected polygon is the first one
         }
         break;
@@ -1361,6 +1419,7 @@ int main(int argc, char **argv)
     sel_ptr = 0;
     trfm = 'r';
     local_trfm = 1;
+
     if (argc > 1)
         read_from_file(argv[1]);
     else
