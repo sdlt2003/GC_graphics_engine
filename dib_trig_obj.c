@@ -42,7 +42,6 @@ unsigned char *buff;
 int dimx, dimy, dim;
 
 int indexx; // me dice que triangulo del objeto que estoy dibujando
-triangulo *triangulosptr;
 triobj *first_object_pointer;   //?
 triobj *sel_ptr; //?
 int all;
@@ -52,18 +51,16 @@ int perspective;
 int cam_val;
 char trfm;
 int local_trfm;
+int view_mode; // 0 es la camara, 1 es el objeto
+int analisis; // if 1, then we are in analisis mode, if 0, we are in flight mode
 int backface;
-int camera_mode;
-
 
 //matrices globales
 double modelview_matrix[16];
 double projection_matrix[16];
 
-
 double l, r, b, t, n, f;
- 
-// hay que cambiar esos valores dependiendo si estamos en perspectiva o paralelo
+punto E, At;
 
 char filename[100];
 
@@ -234,6 +231,14 @@ double dot_product(vector v1, vector v2)
     return v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
 }
 
+// el vector c se obtiene de la multiplicación de los vectores a x b
+void cross_product (vector v1, vector v2, vector *result)
+{
+    result->x = v1.y * v2.z - v1.z * v2.y;
+    result->y = v1.z * v2.x - v1.x * v2.z;
+    result->z = v1.x * v2.y - v1.y * v2.x;
+}
+
 // inicializacion de la camara
 void calc_cam_matrix(triobj *first_cam_ptr){
 
@@ -269,6 +274,17 @@ void calc_cam_matrix(triobj *first_cam_ptr){
     first_cam_ptr->mptr->m[15] = 1.0;
 }
 
+void update_cam_params() {
+
+    E.x = first_cam_ptr->mptr->m[3];
+    E.y = first_cam_ptr->mptr->m[7];
+    E.z = first_cam_ptr->mptr->m[11];
+
+    At.x = E.x - first_cam_ptr->mptr->m[2];
+    At.y = E.y - first_cam_ptr->mptr->m[6];
+    At.z = E.z - first_cam_ptr->mptr->m[10];
+}
+
 void init_camera() {
     first_cam_ptr = (triobj *)malloc(sizeof(triobj));
     if (first_cam_ptr == NULL) {
@@ -281,9 +297,10 @@ void init_camera() {
     first_cam_ptr->rgb = NULL;
     
     calc_cam_matrix(first_cam_ptr);
+
+    // Inicializar E y at
+    update_cam_params();
 }
-
-
 
 void calc_projection_matrix()
 {
@@ -340,13 +357,13 @@ void calc_projection_matrix()
         projection_matrix[14] = 0;
         projection_matrix[15] = 1;
     }
-    printf("La matriz de proyección es la siguiente: \n");
-    for (int i = 0; i < 4; i++) {
-        for (int j = 0; j < 4; j++) {
-            printf("%lf ", projection_matrix[i * 4 + j]);
-        }
-        printf("\n");
-    }
+    // printf("La matriz de proyección es la siguiente: \n");
+    // for (int i = 0; i < 4; i++) {
+    //     for (int j = 0; j < 4; j++) {
+    //         printf("%lf ", projection_matrix[i * 4 + j]);
+    //     }
+    //     printf("\n");
+    // }
 
 }
 
@@ -434,6 +451,16 @@ void intercambiar_puntos(punto *p1, punto *p2)
     *p2 = temp;
 }
 
+//funcion de normalizacion
+vector normalize(vector v)
+{
+    float norma = sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+    v.x /= norma;
+    v.y /= norma;
+    v.z /= norma;
+    return v;
+}
+
 int tipo_triangulo(punto p1, punto p2, punto p3, float *lado1, float *lado2, float *lado3)
 {
     /**
@@ -484,7 +511,7 @@ void dibujar_triangulo(triobj *optr, int ti)
     // vector n;         // normal del triangulo
 
     punto p1aux, p2aux, p3aux;
-    vector nAux, dir_cam;
+    vector nAux, dir_cam, pos_cam;
     float c;    
 
     float alpha, beta, gamma;
@@ -498,38 +525,28 @@ void dibujar_triangulo(triobj *optr, int ti)
     mxp(&p2aux, modelview_matrix, tptr->p2);
     mxp(&p3aux, modelview_matrix, tptr->p3);
 
-// Verificar si alguno de los puntos tiene z <= -0.1
+    // Verificar si alguno de los puntos tiene z <= -0.1
     if (p1aux.z >= -n || p2aux.z >= -n || p3aux.z >= -n) {
         return; // No dibujamos el triángulo
     }
 
-
     mxv(&nAux, modelview_matrix, tptr->N);
+    // printf("Normal: %f, %f, %f\n", nAux.x, nAux.y, nAux.z);
 
     // tengo que decidir si dibujar o no el triangulo dependiendo de si el punto está por detrás de mi plano de proyección
-
-
-    // si la camara esta en perspectiva, la normal del triangulo no se puede usar para determinar si esta delante o detras
-    if (!perspective)
-    {
-        // Si la Z es negativa, el triángulo está detrás de la cámara
-        if (nAux.z < -1e-6)
-        {
+    if (!perspective){
+        if (nAux.z < 0){    
             if (!backface)
                 return;
-            glColor3ub(255, 0, 0);
-        }
-        else
-        {
+            glColor3ub(0, 0, 0);
+        }else{
             glColor3ub(255, 255, 255);
         }
-    }
-    else
-    {
-        dir_cam = (vector){first_cam_ptr->mptr->m[3], first_cam_ptr->mptr->m[7], first_cam_ptr->mptr->m[11]};
-        c = dot_product(dir_cam, nAux);
+    }else{
+        
+        c = -nAux.x * p1aux.x - nAux.y * p1aux.y - nAux.z * p1aux.z; 
 
-        if (c < -1e-6)
+        if (c < 0)
         {
             if (!backface)
                 return;
@@ -539,8 +556,6 @@ void dibujar_triangulo(triobj *optr, int ti)
         {
             glColor3ub(255, 255, 255);
         }
-
-        // En perspectiva, el plano Z da problemas en función de la posición de la cámara respecto al objeto
     }
 
     // como la 4ta componenete de la matriz de proyeccion en perspectiva puede ser 0, ya no podemos usar mxp
@@ -549,7 +564,6 @@ void dibujar_triangulo(triobj *optr, int ti)
     mPxP(&p1, projection_matrix, p1aux);
     mPxP(&p2, projection_matrix, p2aux);
     mPxP(&p3, projection_matrix, p3aux);
-
     
     if (lines == 1)
     {
@@ -663,7 +677,19 @@ static void draw(void)
         return;
     }
 
-    obtener_CSR_partiendo_de_M(first_cam_ptr->mptr->m, M_csr);
+    if (view_mode == 0) {
+        // Vista de la cámara
+        obtener_CSR_partiendo_de_M(first_cam_ptr->mptr->m, M_csr);
+    } else {
+        // Vista del objeto seleccionado
+        if (sel_ptr && sel_ptr->mptr) {
+            obtener_CSR_partiendo_de_M(sel_ptr->mptr->m, M_csr);
+        } else {
+            // Si no hay objeto seleccionado, usar la vista de la cámara
+            obtener_CSR_partiendo_de_M(first_cam_ptr->mptr->m, M_csr);
+        }
+    }
+
     calc_projection_matrix();
 
     // no se puede dibujar sin objetos
@@ -679,37 +705,43 @@ static void draw(void)
             glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
     }
     
-
-    triangulosptr = sel_ptr->triangulos;
     if (objects == 1) // si tengo que dibujar objetos completos
     {
         if (all == 1) // si sin todos los objetos
         {
             for (auxptr = first_object_pointer; auxptr != 0; auxptr = auxptr->next) // con un auxiliar recorro toda la lista
             {
+                if (view_mode == 0 || auxptr != sel_ptr) {
+                    // Vista de cámara o objeto no seleccionado
+                    mxm(M_csr, auxptr->mptr->m, modelview_matrix);
+                } else {
+                    // Vista del objeto seleccionado
+                    mxm(M_csr, sel_ptr->mptr->m, modelview_matrix);
+                }
                 for (i = 0; i < auxptr->num_triangles; i++)
                 {
-                    // el modelview se calcula con la multiplicacion de M_csr * la matriz del objeto
-                    mxm(M_csr, auxptr->mptr->m, modelview_matrix);
                     dibujar_triangulo(auxptr, i); // dibujo el auxiliar
                 }
             }
         }
         else
         {
+            mxm(M_csr, sel_ptr->mptr->m, modelview_matrix);
             for (i = 0; i < sel_ptr->num_triangles; i++)
             {
+                mxm(M_csr, sel_ptr->mptr->m, modelview_matrix);
                 dibujar_triangulo(sel_ptr, i);
             }
         }
     }
     else
     {
+        mxm(M_csr, sel_ptr->mptr->m, modelview_matrix); 
         dibujar_triangulo(sel_ptr, indexx);
     }
 
     glFlush();
-    print_matrix("matriz de transformación");
+    // print_matrix("matriz de transformación");
 
 }
 
@@ -761,8 +793,6 @@ void read_from_file(char *fitx)
             tri->N.z /= norma;
         }
 
-        triangulosptr = optr->triangulos;
-        // printf("Matriz del objeto...\n");
         optr->mptr = (mlist *)malloc(sizeof(mlist));
         for (i = 0; i < 16; i++)
             optr->mptr->m[i] = 0;
@@ -799,6 +829,10 @@ void translate(double x, double y, double z) {
     target->m[3] += x * factor;
     target->m[7] += y * factor;
     target->m[11] += z * factor;
+
+    if (cam_val == 1) {
+        update_cam_params();
+    }
 }
 
 void delete_object(triobj *optr)
@@ -850,71 +884,87 @@ void delete_object(triobj *optr)
     }
 }
 
+
 void rotate(double x, double y, double z)
 {
-    double trfm_matrix[16] = {0};
+    double rotation_matrix[16] = {0};
     double factor = 0.05;
     double angle = factor * (x != 0 ? x : (y != 0 ? y : z));
     double c = cos(angle);
     double s = sin(angle);
 
+    // Seleccionar la matriz a transformar, cámara u objeto
     mlist *target = (cam_val == 1) ? first_cam_ptr->mptr : sel_ptr->mptr;
 
     // Matriz identidad
-    trfm_matrix[0] = trfm_matrix[5] = trfm_matrix[10] = trfm_matrix[15] = 1.0;
+    rotation_matrix[0] = rotation_matrix[5] = rotation_matrix[10] = rotation_matrix[15] = 1.0;
 
     if (x != 0)
     {
         // Rotación alrededor del eje X
-        trfm_matrix[5] = c;
-        trfm_matrix[6] = -s;
-        trfm_matrix[9] = s;
-        trfm_matrix[10] = c;
+        rotation_matrix[5] = c;
+        rotation_matrix[6] = -s;
+        rotation_matrix[9] = s;
+        rotation_matrix[10] = c;
     }
     else if (y != 0)
     {
         // Rotación alrededor del eje Y
-        trfm_matrix[0] = c;
-        trfm_matrix[2] = s;
-        trfm_matrix[8] = -s;
-        trfm_matrix[10] = c;
+        rotation_matrix[0] = c;
+        rotation_matrix[2] = s;
+        rotation_matrix[8] = -s;
+        rotation_matrix[10] = c;
     }
     else if (z != 0)
     {
         // Rotación alrededor del eje Z
-        trfm_matrix[0] = c;
-        trfm_matrix[1] = -s;
-        trfm_matrix[4] = s;
-        trfm_matrix[5] = c;
+        rotation_matrix[0] = c;
+        rotation_matrix[1] = -s;
+        rotation_matrix[4] = s;
+        rotation_matrix[5] = c;
     }
 
     double result[16] = {0};
 
     if (local_trfm == 1) {
-        mxm(target->m, trfm_matrix, result);
+        mxm(target->m, rotation_matrix, result);
     } else {
-        mxm(trfm_matrix, target->m, result);
+        mxm(rotation_matrix, target->m, result);
     }
     
     for (int i = 0; i < 16; i++) {
         target->m[i] = result[i];
     }
+
+    if (cam_val == 1) {
+        update_cam_params();
+    }
 }
 
 void x_trfm(int sign)
 {
-    if (trfm == 't')
-        translate(sign, 0, 0);
-    else
+    if (cam_val == 1 && analisis == 0) { // modo vuelo
         rotate(sign, 0, 0);
+    } else
+    {
+        if (trfm == 't')
+            translate(sign, 0, 0);
+        else
+            rotate(sign, 0, 0);
+    }
 }
 
 void y_trfm(int sign)
 {
-    if (trfm == 't')
-        translate(0, sign, 0);
-    else
+    if (cam_val == 1 && analisis == 0) { // modo vuelo
         rotate(0, sign, 0);
+    } else
+    {
+        if (trfm == 't')
+            translate(0, sign, 0);
+        else
+            rotate(0, sign, 0);
+    }
 }
 
 void z_trfm(int sign)
@@ -936,10 +986,137 @@ void undo()
     }
 }
 
+// void enter_analysis_mode() {
+//     if (!sel_ptr) return;
+    
+//     // Calcular el centro del objeto seleccionado
+//     vector object_center = {0, 0, 0};
+//     for (int i = 0; i < sel_ptr->num_triangles; i++) {
+//         object_center.x += (sel_ptr->triangulos[i].p1.x + sel_ptr->triangulos[i].p2.x + sel_ptr->triangulos[i].p3.x) / 3.0;
+//         object_center.y += (sel_ptr->triangulos[i].p1.y + sel_ptr->triangulos[i].p2.y + sel_ptr->triangulos[i].p3.y) / 3.0;
+//         object_center.z += (sel_ptr->triangulos[i].p1.z + sel_ptr->triangulos[i].p2.z + sel_ptr->triangulos[i].p3.z) / 3.0;
+//     }
+//     object_center.x /= sel_ptr->num_triangles;
+//     object_center.y /= sel_ptr->num_triangles;
+//     object_center.z /= sel_ptr->num_triangles;
+
+//     // Posicionar la cámara
+//     first_cam_ptr->mptr->m[3] = object_center.x;
+//     first_cam_ptr->mptr->m[7] = object_center.y;
+//     first_cam_ptr->mptr->m[11] = object_center.z - 5.0; // 5 unidades detrás del objeto
+
+//     // Orientar la cámara hacia el objeto
+//     vector look_dir = {0, 0, 1};
+//     vector up = {0, 1, 0};
+//     vector right;
+//     cross_product(up, look_dir, &right);
+//     cross_product(right, look_dir, &up);
+
+//     // Normalizar los vectores
+//     look_dir = normalize(look_dir);
+//     up = normalize(up);
+//     right = normalize(right);
+
+//     // Actualizar la matriz de la cámara
+//     first_cam_ptr->mptr->m[0] = right.x; first_cam_ptr->mptr->m[1] = right.y; first_cam_ptr->mptr->m[2] = right.z;
+//     first_cam_ptr->mptr->m[4] = up.x; first_cam_ptr->mptr->m[5] = up.y; first_cam_ptr->mptr->m[6] = up.z;
+//     first_cam_ptr->mptr->m[8] = -look_dir.x; first_cam_ptr->mptr->m[9] = -look_dir.y; first_cam_ptr->mptr->m[10] = -look_dir.z;
+// }
+
+
+// void rotate_around_object(char axis, int sign) {
+//     double angle = sign * 0.05;
+//     vector E, At, up, Xc, Yc, Zc;
+//     double radius;
+//     double c, s;
+//     double rotation_matrix[16] = {0};
+
+//     // Obtener la posición actual de la cámara (E)
+//     E.x = first_cam_ptr->mptr->m[3];
+//     E.y = first_cam_ptr->mptr->m[7];
+//     E.z = first_cam_ptr->mptr->m[11];
+
+//     // Calcular el punto de atención (At) usando la dirección de vista
+//     At.x = E.x - first_cam_ptr->mptr->m[2];
+//     At.y = E.y - first_cam_ptr->mptr->m[6];
+//     At.z = E.z - first_cam_ptr->mptr->m[10];
+
+//     // Calcular el radio (distancia entre E y At)
+//     radius = sqrt(pow(E.x - At.x, 2) + pow(E.y - At.y, 2) + pow(E.z - At.z, 2));
+
+//     // Calcular seno y coseno del ángulo
+//     c = cos(angle);
+//     s = sin(angle);
+
+//     // Crear la matriz de rotación según el eje seleccionado
+//     rotation_matrix[15] = 1.0;
+//     switch(axis) {
+//         case 'x':
+//             rotation_matrix[0] = 1.0;
+//             rotation_matrix[5] = c;
+//             rotation_matrix[6] = -s;
+//             rotation_matrix[9] = s;
+//             rotation_matrix[10] = c;
+//             break;
+//         case 'y':
+//             rotation_matrix[0] = c;
+//             rotation_matrix[2] = s;
+//             rotation_matrix[5] = 1.0;
+//             rotation_matrix[8] = -s;
+//             rotation_matrix[10] = c;
+//             break;
+//         case 'z':
+//             rotation_matrix[0] = c;
+//             rotation_matrix[1] = -s;
+//             rotation_matrix[4] = s;
+//             rotation_matrix[5] = c;
+//             rotation_matrix[10] = 1.0;
+//             break;
+//     }
+
+//     // Calcular la nueva posición de E
+//     vector new_E;
+//     new_E.x = At.x + (E.x - At.x) * rotation_matrix[0] + (E.y - At.y) * rotation_matrix[1] + (E.z - At.z) * rotation_matrix[2];
+//     new_E.y = At.y + (E.x - At.x) * rotation_matrix[4] + (E.y - At.y) * rotation_matrix[5] + (E.z - At.z) * rotation_matrix[6];
+//     new_E.z = At.z + (E.x - At.x) * rotation_matrix[8] + (E.y - At.y) * rotation_matrix[9] + (E.z - At.z) * rotation_matrix[10];
+
+//     // Actualizar la matriz de la cámara con la nueva posición
+//     first_cam_ptr->mptr->m[3] = new_E.x;
+//     first_cam_ptr->mptr->m[7] = new_E.y;
+//     first_cam_ptr->mptr->m[11] = new_E.z;
+
+//     // Recalcular los vectores Xc, Yc, Zc
+//     up.x = 0; up.y = 1; up.z = 0;
+
+//     // Calcular Zc (dirección de vista)
+//     Zc.x = At.x - new_E.x;
+//     Zc.y = At.y - new_E.y;
+//     Zc.z = At.z - new_E.z;
+//     Zc = normalize(Zc);
+
+//     // Calcular Xc
+//     cross_product(up, Zc, &Xc);
+//     Xc = normalize(Xc);
+
+//     // Calcular Yc
+//     cross_product(Zc, Xc, &Yc);
+//     Yc = normalize(Yc);
+
+//     // Actualizar la matriz de la cámara con los nuevos vectores
+//     for (int i = 0; i < 3; i++) {
+//         first_cam_ptr->mptr->m[i] = Xc.x;
+//         first_cam_ptr->mptr->m[4+i] = Yc.x;
+//         first_cam_ptr->mptr->m[8+i] = Zc.x;
+//     }
+// }
+
+
+
 static void keyboard(unsigned char key, int x, int y)
 {
     int retval;
     int i;
+    char selected;
     FILE *obj_file;
 
     switch (key)
@@ -961,14 +1138,12 @@ static void keyboard(unsigned char key, int x, int y)
         }
         break;
     case 'd':
-        if (all == 1)
-            all = 0;
-        else
-            all = 1;
+        all = 1 - all;
         break;
     case 'b':
     case 'B':
-        backface = backface - 1;
+        backface = 1 - backface;
+        printf("Backface culling %s\n", backface ? "activado" : "desactivado");
         break;
     case 'o':
         if (objects == 1)
@@ -982,7 +1157,6 @@ static void keyboard(unsigned char key, int x, int y)
     case 'S':
         scale(-1);
         break;
-    // TODO: Si le damos a la 
     case 'l':
         if (lines == 1)
             lines = 0;
@@ -991,43 +1165,102 @@ static void keyboard(unsigned char key, int x, int y)
         break;
     case 't':
         trfm = 't';
+        printf("=== \n");
+        printf("- Traslación activada\n");
         break;
     case 'r':
         trfm = 'r';
+        printf("=== \n");
+        printf("- Rotación activada\n");
         break;
+    case 'G':
     case 'g':
-        if (local_trfm == 1)
-            local_trfm = 0;
-        else
-            local_trfm = 1;
+        printf("=== \n");      
+        if (cam_val == 1) { // si estamos aplicando transformaciones a la camara
+            analisis = 1 - analisis; // cambiamos entre modo analisis y modo vuelo
+            printf("La camara se encuentra en modo %s\n", analisis ? "Analisis" : "Vuelo");
+            if (analisis){
+                enter_analysis_mode();
+            }
+        } else {            // si estamos aplicando transformaciones a un objeto
+            local_trfm = 1 - local_trfm; // cambiamos entre transformaciones locales y globales 
+            printf("Transformaciones locales %s\n", local_trfm ? "activadas" : "desactivadas");
+        }
         break;
-    // Distingir C de c. C se encarga de cambiar la visualizacion entre la camara y el objeto
+
     case 'C':
-        //TODO: cambiar la visualizacion entre la camara y el objeto
+            //TODO: Si le damos a esta tecla, pasaremos de visualizar lo que ve la camara a lo que ve el objeto seleccionado (entiendo que el objeto seleccionado por el modo analisis?)
+        view_mode = 1 - view_mode;
+        printf("Visualizamos lo que ve %s\n", view_mode ? "el objeto seleccionado" : "la cámara");
+        break;
     case 'c':
         cam_val = 1 - cam_val;
+        printf("=== \n");
         printf("Transformaciones aplicadas a: %s\n", cam_val ? "Cámara" : "Objeto");
+        printf("- La camara se encuentra en modo %s\n", analisis ? "Analisis" : "Vuelo");
+        printf("- %s activada\n", trfm == 't' ? "Traslación" : "Rotación");
         break;
     case 'p':
     case 'P':
         perspective = 1 - perspective;
+        printf("=== \n");
         printf("Visualización de vista en %s\n", perspective ? "Perspectiva" : "Paralelo");
         break;
     
     case 'x':
-        x_trfm(1);
+        if (cam_val == 0){ // transformaciones en el objeto
+            x_trfm(1);
+        } else if (cam_val == 1){
+            if (analisis == 0){
+                y_trfm(1);
+            } else {
+                selected = 'x';
+                rotate_around_object(selected, 1);
+            }
+            update_cam_params();
+        }
         break;
     case 'y':
-        y_trfm(1);
+        if (cam_val == 0){ //
+            y_trfm(1);
+        } else if (cam_val == 1){
+            if (analisis == 0){
+                x_trfm(1);
+            } else {
+                selected = 'y';
+                rotate_around_object(selected, 1);
+            }
+            update_cam_params();
+        }
         break;
     case 'z':
         z_trfm(1);
         break;
     case 'X':
-        x_trfm(-1);
+        if (cam_val == 0){
+            x_trfm(-1);
+        } else if (cam_val == 1){
+            if (analisis == 0){
+                y_trfm(-1);
+            } else {
+                selected = 'x';
+                rotate_around_object(selected, -1);
+            }
+            update_cam_params();
+        }
         break;
     case 'Y':
-        y_trfm(-1);
+        if (cam_val == 0){
+            y_trfm(-1);
+        } else if (cam_val == 1){
+            if (analisis == 0){
+                x_trfm(-1);
+            } else {
+                selected = 'y';
+                rotate_around_object(selected, -1);
+            }
+            update_cam_params();
+        }
         break;
     case 'Z':
         z_trfm(-1);
@@ -1037,6 +1270,7 @@ static void keyboard(unsigned char key, int x, int y)
         break;
     case 'f':
         /*Ask for file*/
+        printf("=== \n");
         printf("Escribe el nombre del fichero: \n");
         scanf("%s", &(filename[0]));
         read_from_file(filename);
@@ -1111,19 +1345,19 @@ int main(int argc, char **argv)
         exit(-1);
     }
 
-    glClearColor(0.0f, 0.0f, 0.7f, 1.0f);
+    glClearColor(0.0f, 0.0f, 0.2f, 0.2f);
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     glEnable(GL_DEPTH_TEST); // activar el test de profundidad (Z-buffer)
+    glDepthFunc(GL_GREATER);
+    glClearDepth(0.0);
     all = 1;                 // dibujame todos los triangulos a la vez
     lines = 1;               // dibujame los polignos mediante lineas (0 es que no)
     objects = 1;             // todos los objetos a la vez
     first_object_pointer = 0;
-    backface = 1;
-    printf("Empezamos con la eliminación de las caras traseras %s\n", backface ? "activadas" : "desactivadas");
+    backface = 0;
+    view_mode = 0;          
     perspective = 1;
-    printf("Empezamos con la visualización de vista en %s\n", perspective ? "Perspectiva" : "Paralelo");
-    cam_val = 1;             // las transformaciones se aplican a la camara
-    printf("Empezamos con las transformaciones aplicadas a %s\n", cam_val ? "Cámara" : "Objeto");
+    cam_val = 0;             // 1 = las transformaciones se aplican a la camara
     sel_ptr = 0;
     trfm = 'r';
     local_trfm = 1;
@@ -1134,33 +1368,43 @@ int main(int argc, char **argv)
         if (sel_ptr != 0) 
             {
             sel_ptr->mptr->m[3] = -1.0;
+            sel_ptr = sel_ptr->next;
             }   
         read_from_file("abioia-1+1.txt");
         if (sel_ptr != 0) 
             {
-                sel_ptr->mptr->m[3] = 1.0;
+            sel_ptr->mptr->m[3] = 1.0;
+            sel_ptr = sel_ptr->next;
             }   
         read_from_file("abioia-1+1.txt");
         if (sel_ptr != 0) 
             { 
             sel_ptr->mptr->m[7] = -0.4;
             sel_ptr->mptr->m[11] = 0.5;
+            sel_ptr = sel_ptr->next;
             }   
         read_from_file("abioia-1+1.txt");
         if (sel_ptr != 0) 
             {
             sel_ptr->mptr->m[11] = -0.7;
+            sel_ptr = sel_ptr->next;
             }        
         read_from_file("abioia-1+1.txt");
         if (sel_ptr != 0) 
             {
             sel_ptr->mptr->m[7] = 0.7;
+            sel_ptr = sel_ptr->next;
             }                        
         read_from_file("abioia-1+1.txt");
-        // translate(-10, 0, 0);
         // read_from_file("z-1+1.txt");
-        // translate(10, 0, 0);
+        // read_from_file("z-1+1.txt");
+                
+        printf("Empezamos con el backface culling %s\n", backface ? "desactivado" : "activado");
+        printf("Empezamos con la visualización de vista en %s\n", perspective ? "Perspectiva" : "Paralelo");
+        printf("Empezamos con las transformaciones aplicadas a %s\n", cam_val ? "Cámara" : "Objeto");
+        printf("Empezamos con el modo de visualización de %s\n", view_mode ? "Objeto" : "Cámara");
     glutMainLoop();
+
 
     return 0;
 }
