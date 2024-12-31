@@ -60,8 +60,10 @@ double modelview_matrix[16];
 double projection_matrix[16];
 
 double l, r, b, t, n, f;
-punto E, at;
+// punto E
+punto at;
 vector look_dir, up, right;
+double dist_to_obj;
 char filename[100];
 
 // TODO
@@ -172,6 +174,15 @@ void print_matrix(char *str)
     for (i = 0; i < 4; i++)
         printf("%lf, %lf, %lf, %lf\n", sel_ptr->mptr->m[i * 4], sel_ptr->mptr->m[i * 4 + 1], sel_ptr->mptr->m[i * 4 + 2],
                sel_ptr->mptr->m[i * 4 + 3]);
+}
+
+void print_matrix_from_param(double *m)
+{
+    int i;
+
+    for (i = 0; i < 4; i++)
+        printf("%lf, %lf, %lf, %lf\n", m[i * 4], m[i * 4 + 1], m[i * 4 + 2], m[i * 4 + 3]);
+    printf("\n");
 }
 
 void mxp(punto *pptr, double m[16], punto p)
@@ -779,63 +790,94 @@ void read_from_file(char *fitx)
     printf("datuak irakurrita\n");
 }
 
-void calc_obj_centre(){
+void calc_obj_centre() {
+    // if (!sel_ptr) return;
+    
+    // Reiniciar at a 0 antes de calcular el nuevo centro
+    at.x = 0.0;
+    at.y = 0.0;
+    at.z = 0.0;
+    
+    punto p_transformed;
+    
     for (int i = 0; i < sel_ptr->num_triangles; i++) {
-        at.x += (sel_ptr->triangulos[i].p1.x + sel_ptr->triangulos[i].p2.x + sel_ptr->triangulos[i].p3.x) / 3.0;
-        at.y += (sel_ptr->triangulos[i].p1.y + sel_ptr->triangulos[i].p2.y + sel_ptr->triangulos[i].p3.y) / 3.0;
-        at.z += (sel_ptr->triangulos[i].p1.z + sel_ptr->triangulos[i].p2.z + sel_ptr->triangulos[i].p3.z) / 3.0;
-    }
-    at.x /= sel_ptr->num_triangles;
-    at.y /= sel_ptr->num_triangles;
-    at.z /= sel_ptr->num_triangles;
-}
-
-void update_cam_params() {
-    E.x = first_cam_ptr->mptr->m[3];
-    E.y = first_cam_ptr->mptr->m[7];
-    E.z = first_cam_ptr->mptr->m[11];
-
-    // At es el punto al que deberia mirar, que es la posicion del objeto seleccionado
-    if (sel_ptr) {
-        at.x = sel_ptr->mptr->m[3];
-        at.y = sel_ptr->mptr->m[7]; 
-        at.z = sel_ptr->mptr->m[11];
-    } else {
-        at.x = 0.0;
-        at.y = 0.0;
-        at.z = 0.0;
+        // Transformar cada vértice usando la matriz del objeto
+        mxp(&p_transformed, sel_ptr->mptr->m, sel_ptr->triangulos[i].p1);
+        at.x += p_transformed.x;
+        at.y += p_transformed.y;
+        at.z += p_transformed.z;
+        
+        mxp(&p_transformed, sel_ptr->mptr->m, sel_ptr->triangulos[i].p2);
+        at.x += p_transformed.x;
+        at.y += p_transformed.y;
+        at.z += p_transformed.z;
+        
+        mxp(&p_transformed, sel_ptr->mptr->m, sel_ptr->triangulos[i].p3);
+        at.x += p_transformed.x;
+        at.y += p_transformed.y;
+        at.z += p_transformed.z;
     }
 
-    look_dir.x = at.x - E.x;
-    look_dir.y = at.y - E.y;
-    look_dir.z = at.z - E.z;
-    normalize(&look_dir);
-
-    // up.x = first_cam_ptr->mptr->m[1];
-    // up.y = first_cam_ptr->mptr->m[5];
-    // up.z = first_cam_ptr->mptr->m[9];
-    // normalize(&up);
-
-    up.x = 0.0;
-    up.y = 1.0;
-    up.z = 0.0; 
-
-    cross_product(up, look_dir, &right);
-    normalize(&right);
+    // Dividir por el número total de vértices (3 por triángulo)
+    at.x /= (sel_ptr->num_triangles * 3);
+    at.y /= (sel_ptr->num_triangles * 3);
+    at.z /= (sel_ptr->num_triangles * 3);
 }
 
 void orientate_cam_to_obj() {
     // Actualizar la matriz de la cámara para que mire al objeto seleccionado
     first_cam_ptr->mptr->m[0] = right.x;
-    first_cam_ptr->mptr->m[1] = right.y; 
-    first_cam_ptr->mptr->m[2] = right.z;
-    first_cam_ptr->mptr->m[4] = up.x;
+    first_cam_ptr->mptr->m[4] = right.y;
+    first_cam_ptr->mptr->m[8] = right.z;
+
+    first_cam_ptr->mptr->m[1] = up.x;
     first_cam_ptr->mptr->m[5] = up.y;
-    first_cam_ptr->mptr->m[6] = up.z;
-    first_cam_ptr->mptr->m[8] = -look_dir.x;
-    first_cam_ptr->mptr->m[9] = -look_dir.y;
+    first_cam_ptr->mptr->m[9] = up.z;
+    
+    first_cam_ptr->mptr->m[2] = -look_dir.x;
+    first_cam_ptr->mptr->m[6] = -look_dir.y;
     first_cam_ptr->mptr->m[10] = -look_dir.z;
 }
+
+
+void update_cam_params() {
+
+    if (analisis) {
+        // Calcular el centro del objeto seleccionado
+        calc_obj_centre();
+
+        // En modo análisis, calcular look_dir hacia el centro del objeto
+        look_dir.x = at.x - first_cam_ptr->mptr->m[3];
+        look_dir.y = at.y - first_cam_ptr->mptr->m[7];
+        look_dir.z = at.z - first_cam_ptr->mptr->m[11];
+        normalize(&look_dir);
+
+        // Mantener up constante
+        up.x = 0.0;
+        up.y = 1.0;
+        up.z = 0.0;
+
+        // Calcular right
+        cross_product(up, look_dir, &right);
+        normalize(&right);
+
+        // Recalcular up para asegurar ortogonalidad
+        cross_product(look_dir, right, &up);
+        normalize(&up);
+
+        orientate_cam_to_obj();
+
+        print_matrix_from_param(first_cam_ptr->mptr->m);
+
+    } else {
+        // En modo vuelo, obtener look_dir de la matriz de la cámara
+        look_dir.x = -first_cam_ptr->mptr->m[2];
+        look_dir.y = -first_cam_ptr->mptr->m[6];
+        look_dir.z = -first_cam_ptr->mptr->m[10];
+        normalize(&look_dir);
+    }
+}
+
 
 void init_camera() {
     first_cam_ptr = (triobj *)malloc(sizeof(triobj));
@@ -854,13 +896,6 @@ void init_camera() {
     update_cam_params();
 }
 
-void analysis_manager() {
-    calc_obj_centre();      // calcula el centro del objeto seleccionado
-    update_cam_params();    // calcula todos los parametros de la camara para el modo analisis
-    orientate_cam_to_obj(); // actualiza la matriz de la camara
-
-}
-
 void scale(int sign)
 {
     // do_matrix();
@@ -876,14 +911,53 @@ void scale(int sign)
 
 void translate(double x, double y, double z) {
     double factor = 0.05;
-    mlist *target = (cam_val == 1) ? first_cam_ptr->mptr : sel_ptr->mptr;
-    
-    target->m[3] += x * factor;
-    target->m[7] += y * factor;
-    target->m[11] += z * factor;
 
     if (cam_val == 1) {
+        vector direction;
+        if (analisis == 0) { // Modo vuelo
+            // Obtener la dirección de vista actual de la cámara
+            direction.x = -first_cam_ptr->mptr->m[2];
+            direction.y = -first_cam_ptr->mptr->m[6];
+            direction.z = -first_cam_ptr->mptr->m[10];
+            normalize(&direction);
+
+            // Actualizar la posición usando la dirección actual
+            first_cam_ptr->mptr->m[3] += direction.x * z * factor;
+            first_cam_ptr->mptr->m[7] += direction.y * z * factor;
+            first_cam_ptr->mptr->m[11] += direction.z * z * factor;
+
+        } else {  // modo analisis
+            vector new_pos;
+            // Calcular nueva posición propuesta
+            new_pos.x = first_cam_ptr->mptr->m[3] + look_dir.x * z * 0.05;
+            new_pos.y = first_cam_ptr->mptr->m[7] + look_dir.y * z * 0.05;
+            new_pos.z = first_cam_ptr->mptr->m[11] + look_dir.z * z * 0.05;
+
+            // Calcular distancia al objeto usando at (centro del objeto)
+            vector to_obj;
+            to_obj.x = at.x - new_pos.x;
+            to_obj.y = at.y - new_pos.y;
+            to_obj.z = at.z - new_pos.z;
+            double new_distance = sqrt(to_obj.x * to_obj.x + 
+                                    to_obj.y * to_obj.y + 
+                                    to_obj.z * to_obj.z);
+
+            // Solo actualizar si la distancia es válida
+            double min_distance = 0.2;
+            double max_distance = 10.0;
+            if (new_distance >= min_distance && new_distance <= max_distance) {
+                first_cam_ptr->mptr->m[3] = new_pos.x;
+                first_cam_ptr->mptr->m[7] = new_pos.y;
+                first_cam_ptr->mptr->m[11] = new_pos.z;
+            }
+        }
         update_cam_params();
+    } else {
+        // Para objetos mantener el comportamiento actual
+        mlist *target = sel_ptr->mptr;
+        target->m[3] += x * factor;
+        target->m[7] += y * factor;
+        target->m[11] += z * factor;
     }
 }
 
@@ -935,6 +1009,65 @@ void delete_object(triobj *optr)
         }   
     }
 }
+
+void rotate_around_object(char axis, int sign) {
+    if (!sel_ptr) return;
+    
+    double angle = sign * 0.05;
+    double c = cos(angle);
+    double s = sin(angle);
+    
+    // Matriz de traslación al punto de atención
+    double M1[16] = {
+        1, 0, 0, -at.x,
+        0, 1, 0, -at.y,
+        0, 0, 1, -at.z,
+        0, 0, 0, 1
+    };
+    
+    // Matriz de traslación inversa
+    double M2[16] = {
+        1, 0, 0, at.x,
+        0, 1, 0, at.y,
+        0, 0, 1, at.z,
+        0, 0, 0, 1
+    };
+    
+    // Matriz de rotación
+    double R[16] = {0};
+    for (int i = 0; i < 16; i++) 
+        R[i] = (i % 5 == 0) ? 1.0 : 0.0;
+    
+    if (axis == 'x') {
+        // Rotación alrededor del eje X
+        R[5] = c;
+        R[6] = -s;
+        R[9] = s;
+        R[10] = c;
+    } else { // axis == 'y'
+        // Rotación alrededor del eje Y
+        R[0] = c;
+        R[2] = s;
+        R[8] = -s;
+        R[10] = c;
+    }
+    
+    // Calcular Ml = M2 * R * M1
+    double temp[16], result[16];
+    mxm(R, M1, temp);       // temp = R * M1
+    mxm(M2, temp, result);  // result = M2 * temp
+    
+    // M_csr' = Ml * M_csr
+    mxm(result, first_cam_ptr->mptr->m, temp);
+    
+    // Actualizar la matriz de la cámara
+    memcpy(first_cam_ptr->mptr->m, temp, sizeof(double) * 16);
+    
+    // Actualizar los parámetros de la cámara
+    // update_cam_params();
+}
+
+
 
 
 void rotate(double x, double y, double z)
@@ -1028,142 +1161,6 @@ void z_trfm(int sign)
 
 }
 
-void undo()
-{
-    if (sel_ptr->mptr && sel_ptr->mptr->next)
-    {
-        mlist *temp = sel_ptr->mptr;
-        sel_ptr->mptr = sel_ptr->mptr->next;
-        free(temp);
-    }
-}
-
-// void enter_analysis_mode() {
-//     if (!sel_ptr) return;
-    
-//     // Calcular el centro del objeto seleccionado
-//     vector object_center = {0, 0, 0};
-//     for (int i = 0; i < sel_ptr->num_triangles; i++) {
-//         object_center.x += (sel_ptr->triangulos[i].p1.x + sel_ptr->triangulos[i].p2.x + sel_ptr->triangulos[i].p3.x) / 3.0;
-//         object_center.y += (sel_ptr->triangulos[i].p1.y + sel_ptr->triangulos[i].p2.y + sel_ptr->triangulos[i].p3.y) / 3.0;
-//         object_center.z += (sel_ptr->triangulos[i].p1.z + sel_ptr->triangulos[i].p2.z + sel_ptr->triangulos[i].p3.z) / 3.0;
-//     }
-//     object_center.x /= sel_ptr->num_triangles;
-//     object_center.y /= sel_ptr->num_triangles;
-//     object_center.z /= sel_ptr->num_triangles;
-
-//     // Posicionar la cámara
-//     first_cam_ptr->mptr->m[3] = object_center.x;
-//     first_cam_ptr->mptr->m[7] = object_center.y;
-//     first_cam_ptr->mptr->m[11] = object_center.z - 5.0; // 5 unidades detrás del objeto
-
-//     // Orientar la cámara hacia el objeto
-//     vector look_dir = {0, 0, 1};
-//     vector up = {0, 1, 0};
-//     vector right;
-//     cross_product(up, look_dir, &right);
-//     cross_product(right, look_dir, &up);
-
-//     // Normalizar los vectores
-//     look_dir = normalize(look_dir);
-//     up = normalize(up);
-//     right = normalize(right);
-
-//     // Actualizar la matriz de la cámara
-//     first_cam_ptr->mptr->m[0] = right.x; first_cam_ptr->mptr->m[1] = right.y; first_cam_ptr->mptr->m[2] = right.z;
-//     first_cam_ptr->mptr->m[4] = up.x; first_cam_ptr->mptr->m[5] = up.y; first_cam_ptr->mptr->m[6] = up.z;
-//     first_cam_ptr->mptr->m[8] = -look_dir.x; first_cam_ptr->mptr->m[9] = -look_dir.y; first_cam_ptr->mptr->m[10] = -look_dir.z;
-// }
-
-
-// void rotate_around_object(char axis, int sign) {
-//     double angle = sign * 0.05;
-//     vector E, at, up, Xc, Yc, Zc;
-//     double radius;
-//     double c, s;
-//     double rotation_matrix[16] = {0};
-
-//     // Obtener la posición actual de la cámara (E)
-//     E.x = first_cam_ptr->mptr->m[3];
-//     E.y = first_cam_ptr->mptr->m[7];
-//     E.z = first_cam_ptr->mptr->m[11];
-
-//     // Calcular el punto de atención (At) usando la dirección de vista
-//     at.x = E.x - first_cam_ptr->mptr->m[2];
-//     at.y = E.y - first_cam_ptr->mptr->m[6];
-//     at.z = E.z - first_cam_ptr->mptr->m[10];
-
-//     // Calcular el radio (distancia entre E y at)
-//     radius = sqrt(pow(E.x - at.x, 2) + pow(E.y - at.y, 2) + pow(E.z - at.z, 2));
-
-//     // Calcular seno y coseno del ángulo
-//     c = cos(angle);
-//     s = sin(angle);
-
-//     // Crear la matriz de rotación según el eje seleccionado
-//     rotation_matrix[15] = 1.0;
-//     switch(axis) {
-//         case 'x':
-//             rotation_matrix[0] = 1.0;
-//             rotation_matrix[5] = c;
-//             rotation_matrix[6] = -s;
-//             rotation_matrix[9] = s;
-//             rotation_matrix[10] = c;
-//             break;
-//         case 'y':
-//             rotation_matrix[0] = c;
-//             rotation_matrix[2] = s;
-//             rotation_matrix[5] = 1.0;
-//             rotation_matrix[8] = -s;
-//             rotation_matrix[10] = c;
-//             break;
-//         case 'z':
-//             rotation_matrix[0] = c;
-//             rotation_matrix[1] = -s;
-//             rotation_matrix[4] = s;
-//             rotation_matrix[5] = c;
-//             rotation_matrix[10] = 1.0;
-//             break;
-//     }
-
-//     // Calcular la nueva posición de E
-//     vector new_E;
-//     new_E.x = at.x + (E.x - at.x) * rotation_matrix[0] + (E.y - at.y) * rotation_matrix[1] + (E.z - at.z) * rotation_matrix[2];
-//     new_E.y = at.y + (E.x - at.x) * rotation_matrix[4] + (E.y - at.y) * rotation_matrix[5] + (E.z - at.z) * rotation_matrix[6];
-//     new_E.z = at.z + (E.x - at.x) * rotation_matrix[8] + (E.y - at.y) * rotation_matrix[9] + (E.z - at.z) * rotation_matrix[10];
-
-//     // Actualizar la matriz de la cámara con la nueva posición
-//     first_cam_ptr->mptr->m[3] = new_E.x;
-//     first_cam_ptr->mptr->m[7] = new_E.y;
-//     first_cam_ptr->mptr->m[11] = new_E.z;
-
-//     // Recalcular los vectores Xc, Yc, Zc
-//     up.x = 0; up.y = 1; up.z = 0;
-
-//     // Calcular Zc (dirección de vista)
-//     Zc.x = at.x - new_E.x;
-//     Zc.y = at.y - new_E.y;
-//     Zc.z = At.z - new_E.z;
-//     Zc = normalize(Zc);
-
-//     // Calcular Xc
-//     cross_product(up, Zc, &Xc);
-//     Xc = normalize(Xc);
-
-//     // Calcular Yc
-//     cross_product(Zc, Xc, &Yc);
-//     Yc = normalize(Yc);
-
-//     // Actualizar la matriz de la cámara con los nuevos vectores
-//     for (int i = 0; i < 3; i++) {
-//         first_cam_ptr->mptr->m[i] = Xc.x;
-//         first_cam_ptr->mptr->m[4+i] = Yc.x;
-//         first_cam_ptr->mptr->m[8+i] = Zc.x;
-//     }
-// }
-
-
-
 static void keyboard(unsigned char key, int x, int y)
 {
     int retval;
@@ -1232,7 +1229,7 @@ static void keyboard(unsigned char key, int x, int y)
             analisis = 1 - analisis; // cambiamos entre modo analisis y modo vuelo
             printf("La camara se encuentra en modo %s\n", analisis ? "Analisis" : "Vuelo");
             if (analisis){
-                analysis_manager();
+                update_cam_params();
             }
         } else {            // si estamos aplicando transformaciones a un objeto
             local_trfm = 1 - local_trfm; // cambiamos entre transformaciones locales y globales 
@@ -1260,7 +1257,6 @@ static void keyboard(unsigned char key, int x, int y)
         printf("=== \n");
         printf("Visualización de vista en %s\n", perspective ? "Perspectiva" : "Paralelo");
         break;
-    
     case 'x':
         if (cam_val == 0){ // transformaciones en el objeto
             x_trfm(1);
@@ -1268,8 +1264,7 @@ static void keyboard(unsigned char key, int x, int y)
             if (analisis == 0){
                 y_trfm(1);
             } else {
-                selected = 'x';
-                // rotate_around_object(selected, 1);
+                rotate_around_object('x', 1);
             }
             update_cam_params();
         }
@@ -1282,7 +1277,7 @@ static void keyboard(unsigned char key, int x, int y)
                 x_trfm(1);
             } else {
                 selected = 'y';
-                // rotate_around_object(selected, 1);
+                rotate_around_object('y', 1);
             }
             update_cam_params();
         }
@@ -1297,8 +1292,7 @@ static void keyboard(unsigned char key, int x, int y)
             if (analisis == 0){
                 y_trfm(-1);
             } else {
-                selected = 'x';
-                // rotate_around_object(selected, -1);
+                rotate_around_object('x', -1);
             }
             update_cam_params();
         }
@@ -1311,7 +1305,7 @@ static void keyboard(unsigned char key, int x, int y)
                 x_trfm(-1);
             } else {
                 selected = 'y';
-                // rotate_around_object(selected, -1);
+                rotate_around_object('y', -1);
             }
             update_cam_params();
         }
@@ -1320,7 +1314,7 @@ static void keyboard(unsigned char key, int x, int y)
         z_trfm(-1);
         break;
     case 'u':
-        undo();
+        // undo();
         break;
     case 'f':
         /*Ask for file*/
@@ -1345,12 +1339,25 @@ static void keyboard(unsigned char key, int x, int y)
         if (first_object_pointer != 0) // si no hay objeto no hace nada
         {
             sel_ptr = sel_ptr->next;
+            
             /*The selection is circular, thus if we move out of the list we go back to the first element*/
             if (sel_ptr == 0)
                 sel_ptr = first_object_pointer;
 
             if (analisis == 1) {
-                analysis_manager();
+            
+            update_cam_params();
+            // printf("Se ha dado al tab y cambiamos de objeto. \n");
+            // calc_obj_centre();
+            // printf("Centro del objeto: %f, %f, %f\n", at.x, at.y, at.z);
+                
+            //     printf("orientamos la camara al objeto\n");
+            //     orientate_cam_to_obj();
+            //     printf("camara orientada al objeto\n");
+
+            //     printf("actualizamos los parametros de la camara\n");
+            //     update_cam_params();
+            //     printf("parametros de la camara actualizados\n");
             }
             indexx = 0; // the selected polygon is the first one
         }
